@@ -1,56 +1,67 @@
-name: CI/CD Pipeline
+name: Frontend CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main, develop, master, dummy ]  # 원하는 브랜치 추가
   pull_request:
-    branches:
-      - main
+    branches: [ main, develop, master, dummy ]
 
 jobs:
-  build-and-push:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: '18'
+          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm install
+      - name: Build React App
+        env:
+          CI: false
+        run: |
+          npm ci
+          npm run build
 
-      - name: Build project
-        run: npm run build
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
 
-      - name: Log in to AWS ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          IMAGE_TAG=$(git rev-parse --short HEAD)
-          docker build -t ${{ secrets.AWS_ECR_REPO }}:$IMAGE_TAG . 
-          docker tag ${{ secrets.AWS_ECR_REPO }}:$IMAGE_TAG ${{ secrets.AWS_ECR_REPO }}:latest
-          docker push ${{ secrets.AWS_ECR_REPO }}:$IMAGE_TAG
-          docker push ${{ secrets.AWS_ECR_REPO }}:latest
+          docker build -t $ECR_REGISTRY/portfolio_frontend:${{ github.sha }} -t $ECR_REGISTRY/portfolio_frontend:latest .
+          docker push $ECR_REGISTRY/portfolio_frontend:${{ github.sha }}
+          docker push $ECR_REGISTRY/portfolio_frontend:latest
 
-  deploy:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
+      - name: Update Kubernetes manifests (ArgoCD trigger)
         uses: actions/checkout@v3
-
-      - name: Set up AWS EKS
-        uses: aws-actions/amazon-eks-kubectl-action@v1
         with:
-          cluster-name: ${{ secrets.EKS_CLUSTER_NAME }}
-          region: ${{ secrets.AWS_REGION }}
-          
-      - name: Update Kubernetes deployment
+          repository: mapzine123/kgat-k8s-manifests 
+          token: ${{ secrets.GH_TOKEN }}
+          path: k8s-manifests
+
+      - name: Update image tag in manifests
         run: |
-          kubectl set image deployment/portfolio portfolio=${{ secrets.AWS_ECR_REPO }}:$IMAGE_TAG --namespace=default
-          kubectl rollout status deployment/portfolio --namespace=default
+          cd k8s-manifests
+          sed -i "s|image: .*portfolio_frontend:.*|image: ${{ steps.login-ecr.outputs.registry }}/portfolio_frontend:${{ github.sha }}|" frontend/portfolio_frontend.yaml
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git add .
+          git commit -m "Update image to ${{ github.sha }}"
+          git push
+
+      - name: Trigger ArgoCD sync
+        run: |
+          # ArgoCD CLI를 이용하여 배포를 트리거합니다.
+          argocd app sync portfolio_frontend --auth-token ${{ secrets.ARGOCD_AUTH_TOKEN }} --server ${{ secrets.ARGOCD_SERVER }}
