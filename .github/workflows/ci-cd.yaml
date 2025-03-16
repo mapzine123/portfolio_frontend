@@ -47,7 +47,7 @@ jobs:
       - name: Update Kubernetes manifests (ArgoCD trigger)
         uses: actions/checkout@v3
         with:
-          repository: mapzine123/kgat-k8s-manifests 
+          repository: mapzine123/portfolio-k8s-manifests 
           token: ${{ secrets.GH_TOKEN }}
           path: k8s-manifests
 
