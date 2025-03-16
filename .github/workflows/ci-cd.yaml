@@ -1,0 +1,56 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build project
+        run: npm run build
+
+      - name: Log in to AWS ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG=$(git rev-parse --short HEAD)
+          docker build -t ${{ secrets.AWS_ECR_REPO }}:$IMAGE_TAG . 
+          docker tag ${{ secrets.AWS_ECR_REPO }}:$IMAGE_TAG ${{ secrets.AWS_ECR_REPO }}:latest
+          docker push ${{ secrets.AWS_ECR_REPO }}:$IMAGE_TAG
+          docker push ${{ secrets.AWS_ECR_REPO }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up AWS EKS
+        uses: aws-actions/amazon-eks-kubectl-action@v1
+        with:
+          cluster-name: ${{ secrets.EKS_CLUSTER_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+          
+      - name: Update Kubernetes deployment
+        run: |
+          kubectl set image deployment/portfolio portfolio=${{ secrets.AWS_ECR_REPO }}:$IMAGE_TAG --namespace=default
+          kubectl rollout status deployment/portfolio --namespace=default
