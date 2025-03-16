@@ -51,9 +51,15 @@ jobs:
           token: ${{ secrets.GH_TOKEN }}
           path: k8s-manifests
 
+      - name: Install ArgoCD CLI
+        run: |
+          curl -sSL https://github.com/argoproj/argo-cd/releases/download/v2.7.5/argocd-linux-amd64 -o /usr/local/bin/argocd
+          chmod +x /usr/local/bin/argocd
+
       - name: Update image tag in manifests
         run: |
           cd k8s-manifests
+          # 절대 경로로 변경하거나, 경로 문제를 해결
           sed -i "s|image: .*portfolio_frontend:.*|image: ${{ steps.login-ecr.outputs.registry }}/portfolio_frontend:${{ github.sha }}|" frontend/portfolio_frontend.yaml
           git config --global user.email "github-actions@github.com"
           git config --global user.name "GitHub Actions"
@@ -63,5 +69,4 @@ jobs:
 
       - name: Trigger ArgoCD sync
         run: |
-          # ArgoCD CLI를 이용하여 배포를 트리거합니다.
           argocd app sync portfolio_frontend --auth-token ${{ secrets.ARGOCD_AUTH_TOKEN }} --server ${{ secrets.ARGOCD_SERVER }}
