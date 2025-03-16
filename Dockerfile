@@ -9,13 +9,13 @@ RUN npm ci
 
 # 앱 소스 복사 및 빌드
 COPY . .
-RUN npm run build
+RUN npm run build  # Vite로 빌드 후 /app/dist 디렉토리 생성
 
 # 실행 단계
 FROM nginx:stable-alpine
 
 # 빌드된 앱을 Nginx에 복사
-COPY --from=build /app/build /usr/share/nginx/html
+COPY --from=build /app/dist /usr/share/nginx/html  # Vite 빌드 결과물 복사
 
 # Nginx 설정 파일 복사
 COPY nginx.conf /etc/nginx/conf.d/default.conf
