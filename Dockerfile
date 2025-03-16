@@ -9,7 +9,10 @@ RUN npm ci
 
 # 앱 소스 복사 및 빌드
 COPY . .
-RUN npm run build  # Vite로 빌드 후 /app/dist 디렉토리 생성
+RUN npm run build  # Vite 빌드 후 /app/dist 디렉토리가 생성됩니다.
+
+# 빌드 결과물 확인 (디렉토리 구조 확인)
+RUN ls -la /app  # 빌드가 정상적으로 되었는지 확인
 
 # 실행 단계
 FROM nginx:stable-alpine
